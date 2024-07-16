@@ -130,7 +130,7 @@ class HouseBot {
             property_url: url
         }));
     }
-    
+
     async authenticate() {
         const serviceAccountAuth = new JWT({
             email: 'porterbmoody@gmail.com',
