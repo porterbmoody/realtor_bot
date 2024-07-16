@@ -2,11 +2,11 @@ const { Builder, By, until } = require('selenium-webdriver');
 const chrome = require('selenium-webdriver/chrome');
 const { GoogleSpreadsheet } = require('google-spreadsheet');
 const fs = require('fs');
-// const fs = require('fs').promises;
 const path = require('path');
 const { exec } = require('child_process');
 const { JWT } = require('google-auth-library');
 const axios = require('axios');
+const puppeteer = require('puppeteer');
 
 class HouseBot {
     constructor() {
@@ -22,10 +22,10 @@ class HouseBot {
     async autoScroll() {
         await this.page.evaluate(async () => {
             await new Promise((resolve) => {
-                var totalHeight = 0;
-                var distance = 100;
-                var timer = setInterval(() => {
-                    var scrollHeight = document.body.scrollHeight;
+                let totalHeight = 0;
+                const distance = 100;
+                const timer = setInterval(() => {
+                    const scrollHeight = document.body.scrollHeight;
                     window.scrollBy(0, distance);
                     totalHeight += distance;
 
@@ -38,10 +38,10 @@ class HouseBot {
         });
     }
 
-    async saveToCsv(data) {
+    async saveData(data) {
         try {
             const csv = parse(data);
-            await fs.writeFile('profile_data.csv', csv);
+            await fs.writeFile('data.csv', csv);
             console.log('CSV file saved successfully.');
         } catch (error) {
             console.error('Error saving CSV file:', error);
@@ -71,19 +71,81 @@ class HouseBot {
         });
     }
 
-    async authenticateGoogleSheets() {
+    parseNumber(value) {
+        return parseFloat(value.replace(/[^0-9.]/g, ''));
+    }
+
+    async runBot() {
+        await this.launchBrowser();
+        const propertyData = await this.scrapeProperties();
+        await this.saveData(propertyData);
+        await this.authenticateGoogleSheets();
+        await this.uploadToGoogleSheets(propertyData);
+        await this.browser.close();
+    }
+
+    async launchBrowser() {
+        this.browser = await puppeteer.launch({
+            headless: false,
+            args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-notifications',
+                '--disable-extensions',
+                '--disable-blink-features=AutomationControlled',
+                '--disable-dev-shm-usage'
+            ]
+        });
+        this.page = await this.browser.newPage();
+    }
+
+    async scrapeProperties() {
+        const prices = [];
+        const squareFootages = [];
+        const propertyUrls = [];
+
+        await this.page.goto(this.url);
+        await this.autoScroll();
+
+        const properties = await this.page.$$('[data-rf-test-name="mapHomeCard"]');
+        for (const property of properties.slice(0, 1)) {
+            const propertyUrl = await property.$eval('a', a => a.href);
+            const priceText = await property.$eval('.bp-Homecard__Price--value', el => el.textContent);
+            propertyUrls.push(propertyUrl);
+            prices.push(this.parseNumber(priceText));
+        }
+
+        for (const propertyUrl of propertyUrls) {
+            await this.page.goto(propertyUrl);
+            await this.sleep(2000);
+
+            const squareFootageText = await this.page.$eval('.stat-block.sqft-section', el => el.textContent);
+            squareFootages.push(this.parseNumber(squareFootageText));
+            await this.randomDelay();
+        }
+
+        return propertyUrls.map((url, index) => ({
+            price: prices[index],
+            square_footage: squareFootages[index],
+            property_url: url
+        }));
+    }
+}
+
+class GoogleSheetsHandler {
+    constructor(spreadsheetId) {
+        this.spreadsheetId = spreadsheetId;
+    }
+
+    async authenticate() {
         const serviceAccountAuth = new JWT({
-            email: 'porterbmoody@gmail.com', 
+            email: 'porterbmoody@gmail.com',
             key: 'porterbmoody@serene-courier-402114.iam.gserviceaccount.com',
-            scopes: [
-                'https://www.googleapis.com/auth/spreadsheets',
-            ],
+            scopes: ['https://www.googleapis.com/auth/spreadsheets']
         });
 
         const creds = JSON.parse(await fs.readFile('client_secret.json'));
         this.doc = new GoogleSpreadsheet(this.spreadsheetId, serviceAccountAuth);
-        // await this.doc.useServiceAccountAuth(creds);
-        // this.doc = new GoogleSpreadsheet('<the sheet ID from the url>', serviceAccountAuth);
         await this.doc.loadInfo();
         this.sheet = this.doc.sheetsByIndex[0];
     }
@@ -93,94 +155,23 @@ class HouseBot {
         return rows.map(row => row._rawData);
     }
 
-    checkForDuplicates(existingData, newRow) {
-        return existingData.some(row => row[this.keyField] === newRow[this.keyField]);
+    checkForDuplicates(existingData, newRow, keyField) {
+        return existingData.some(row => row[keyField] === newRow[keyField]);
     }
 
-    async uploadToGoogleSheets() {
+    async uploadToGoogleSheets(data) {
         const existingData = await this.getExistingData();
-        const uniqueData = this.propertyData.filter(row => !this.checkForDuplicates(existingData, row));
+        const uniqueData = data.filter(row => !this.checkForDuplicates(existingData, row, this.keyField));
         for (const row of uniqueData) {
             await this.sheet.addRow(row);
         }
-    }
-
-    parseNumber(value) {
-        return parseFloat(value.replace(/[^0-9.]/g, ''));
-    }
-
-    async runBot() {
-        const options = new chrome.Options();
-        options.addArguments('--user-data-dir=C:\\Users\\Owner\\AppData\\Local\\Google\\Chrome\\User Data');
-        options.addArguments('--no-sandbox');
-        options.addArguments('--disable-dev-shm-usage');
-
-        this.driver = new Builder().forBrowser('chrome').setChromeOptions(options).build();
-        await this.driver.get(this.url);
-        await new Promise(resolve => setTimeout(resolve, 2000));
-
-        this.browser = await puppeteer.launch({
-            headless: false,
-            args: [
-                '--no-sandbox',
-                '--disable-setuid-sandbox',
-                '--disable-notifications',
-                '--disable-extensions',
-                '--disable-blink-features=AutomationControlled',
-                // '--user-data-dir=C:\\Users\\Owner\\AppData\\Local\\Google\\Chrome\\User Data'
-                // '--profile-directory=Default',
-                // 'start-maximized'
-            ]
-        });
-        this.page = await this.browser.newPage();
-        const prices = [];
-        const squareFootages = [];
-        const propertyUrls = [];
-
-        const properties = await this.driver.wait(until.elementsLocated(By.css('[data-rf-test-name="mapHomeCard"]')), 10000);
-        for (const property of properties.slice(0, 1)) {
-            const propertyUrl = await property.findElement(By.css('a')).getAttribute('href');
-            const priceText = await property.findElement(By.css('[class="bp-Homecard__Price--value"]')).getText();
-            console.log(propertyUrl);
-            console.log(priceText);
-            propertyUrls.push(propertyUrl);
-            prices.push(this.parseNumber(priceText));
-        }
-
-        for (const propertyUrl of propertyUrls) {
-            await this.driver.executeScript("window.open('');");
-            const handles = await this.driver.getAllWindowHandles();
-            console.log(`Switching to new tab`);
-            await this.driver.switchTo().window(handles[1]);
-            await this.driver.sleep(2000);
-            await this.driver.get(propertyUrl);
-            await this.driver.sleep(2000);
-
-            const squareFootageText = await this.driver.wait(until.elementLocated(By.css('[class="stat-block sqft-section"]')), 10000).getText();
-            squareFootages.push(this.parseNumber(squareFootageText));
-    
-            await this.driver.close();
-            await this.randomDelay();
-            await this.driver.switchTo().window(handles[0]);
-            await this.randomDelay();
-        }
-
-        this.propertyData = propertyUrls.map((url, index) => ({
-            price: prices[index],
-            square_footage: squareFootages[index],
-            property_url: url
-        }));
-        console.log('submitting data');
-        console.log(this.propertyData);
-        await this.authenticateGoogleSheets();
-        await this.uploadToGoogleSheets();
-        // fs.writeFileSync('propertyData.json', JSON.stringify(this.propertyData, null, 2), 'utf-8');
-
-        await this.driver.quit();
     }
 }
 
 (async () => {
     const bot = new HouseBot();
+    const sheetsHandler = new GoogleSheetsHandler(bot.spreadsheetId);
+    await sheetsHandler.authenticate();
+    bot.uploadToGoogleSheets = sheetsHandler.uploadToGoogleSheets.bind(sheetsHandler);
     await bot.runBot();
 })();
