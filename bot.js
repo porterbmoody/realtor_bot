@@ -33,6 +33,35 @@ class HouseBot {
         await this.driver.get(this.url);
     }
 
+    async autoScroll() {
+        await this.page.evaluate(async () => {
+            await new Promise((resolve) => {
+                var totalHeight = 0;
+                var distance = 100;
+                var timer = setInterval(() => {
+                    var scrollHeight = document.body.scrollHeight;
+                    window.scrollBy(0, distance);
+                    totalHeight += distance;
+
+                    if (totalHeight >= scrollHeight - window.innerHeight) {
+                        clearInterval(timer);
+                        resolve();
+                    }
+                }, 100);
+            });
+        });
+    }
+
+    async saveToCsv(data) {
+        try {
+            const csv = parse(data);
+            await fs.writeFile('profile_data.csv', csv);
+            console.log('CSV file saved successfully.');
+        } catch (error) {
+            console.error('Error saving CSV file:', error);
+        }
+    }
+
     async randomDelay(minSeconds = 2, maxSeconds = 5) {
         const delay = Math.random() * (maxSeconds - minSeconds) + minSeconds;
         return new Promise(resolve => setTimeout(resolve, delay * 1000));
