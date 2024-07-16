@@ -1,12 +1,9 @@
-const { Builder, By, until } = require('selenium-webdriver');
-const chrome = require('selenium-webdriver/chrome');
 const { GoogleSpreadsheet } = require('google-spreadsheet');
 const fs = require('fs');
-const path = require('path');
 const { exec } = require('child_process');
 const { JWT } = require('google-auth-library');
-const axios = require('axios');
 const puppeteer = require('puppeteer');
+const { parse } = require('json2csv');
 
 class HouseBot {
     constructor() {
@@ -14,7 +11,7 @@ class HouseBot {
         this.keyField = 'property_url';
         this.sheetUrl = 'https://docs.google.com/spreadsheets/d/1Iz6G0vnUSogAjWMwnSJ1aJbNRr3VoqU3c-BaC1xSWVo/edit?fbclid=IwZXh0bgNhZW0CMTEAAR1Wu_u_d5yRlZbBKxJ2ndxb7AHpsEOxjqH0k7vRCs3F6vo1f5ZhLpAb0rs_aem_-jf0aobbjchuCTbOYFsOug&pli=1&gid=0#gid=0';
         this.spreadsheetId = this.sheetUrl.split('/d/')[1].split('/edit')[0];
-        this.propertyData = [];
+        this.data = [];
         this.page = null;
         this.browser = null;
     }
@@ -38,9 +35,9 @@ class HouseBot {
         });
     }
 
-    async saveData(data) {
+    async saveData() {
         try {
-            const csv = parse(data);
+            const csv = parse(this.data);
             await fs.writeFile('data.csv', csv);
             console.log('CSV file saved successfully.');
         } catch (error) {
@@ -77,10 +74,10 @@ class HouseBot {
 
     async runBot() {
         await this.launchBrowser();
-        const propertyData = await this.scrapeProperties();
-        await this.saveData(propertyData);
-        await this.authenticateGoogleSheets();
-        await this.uploadToGoogleSheets(propertyData);
+        await this.collectData();
+        await this.saveData();
+        // await this.authenticateGoogleSheets();
+        // await this.uploadToGoogleSheets();
         await this.browser.close();
     }
 
@@ -99,18 +96,18 @@ class HouseBot {
         this.page = await this.browser.newPage();
     }
 
-    async scrapeProperties() {
+    async collectData() {
         const prices = [];
         const squareFootages = [];
         const propertyUrls = [];
 
         await this.page.goto(this.url);
-        await this.autoScroll();
+        // await this.autoScroll();
 
         const properties = await this.page.$$('[data-rf-test-name="mapHomeCard"]');
         for (const property of properties.slice(0, 1)) {
             const propertyUrl = await property.$eval('a', a => a.href);
-            const priceText = await property.$eval('.bp-Homecard__Price--value', el => el.textContent);
+            const priceText = await property.$eval('[class="bp-Homecard__Price--value"]', el => el.textContent);
             propertyUrls.push(propertyUrl);
             prices.push(this.parseNumber(priceText));
         }
@@ -119,46 +116,40 @@ class HouseBot {
             await this.page.goto(propertyUrl);
             await this.sleep(2000);
 
-            const squareFootageText = await this.page.$eval('.stat-block.sqft-section', el => el.textContent);
+            const squareFootageText = await this.page.$eval('[class="stat-block sqft-section"]', el => el.textContent);
             squareFootages.push(this.parseNumber(squareFootageText));
             await this.randomDelay();
         }
 
-        return propertyUrls.map((url, index) => ({
+        this.data = propertyUrls.map((url, index) => ({
             price: prices[index],
             square_footage: squareFootages[index],
             property_url: url
         }));
     }
-}
-
-class GoogleSheetsHandler {
-    constructor(spreadsheetId) {
-        this.spreadsheetId = spreadsheetId;
-    }
-
+    
     async authenticate() {
         const serviceAccountAuth = new JWT({
             email: 'porterbmoody@gmail.com',
             key: 'porterbmoody@serene-courier-402114.iam.gserviceaccount.com',
             scopes: ['https://www.googleapis.com/auth/spreadsheets']
         });
-
+        
         const creds = JSON.parse(await fs.readFile('client_secret.json'));
         this.doc = new GoogleSpreadsheet(this.spreadsheetId, serviceAccountAuth);
         await this.doc.loadInfo();
         this.sheet = this.doc.sheetsByIndex[0];
     }
-
+    
     async getExistingData() {
         const rows = await this.sheet.getRows();
         return rows.map(row => row._rawData);
     }
-
+    
     checkForDuplicates(existingData, newRow, keyField) {
         return existingData.some(row => row[keyField] === newRow[keyField]);
     }
-
+    
     async uploadToGoogleSheets(data) {
         const existingData = await this.getExistingData();
         const uniqueData = data.filter(row => !this.checkForDuplicates(existingData, row, this.keyField));
@@ -170,8 +161,5 @@ class GoogleSheetsHandler {
 
 (async () => {
     const bot = new HouseBot();
-    const sheetsHandler = new GoogleSheetsHandler(bot.spreadsheetId);
-    await sheetsHandler.authenticate();
-    bot.uploadToGoogleSheets = sheetsHandler.uploadToGoogleSheets.bind(sheetsHandler);
     await bot.runBot();
 })();
