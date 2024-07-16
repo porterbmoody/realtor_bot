@@ -102,10 +102,13 @@ class HouseBot {
         const propertyUrls = [];
 
         await this.page.goto(this.url);
+        const totalHomes = await property.$eval('[class="homes summary"]', el => el.textContent);
+        console.log(`total homes listed in the area:${totalHomes}`)
+
         // await this.autoScroll();
 
         const properties = await this.page.$$('[data-rf-test-name="mapHomeCard"]');
-        for (const property of properties.slice(0, 1)) {
+        for (const property of properties.slice(0, 2)) {
             const propertyUrl = await property.$eval('a', a => a.href);
             const priceText = await property.$eval('[class="bp-Homecard__Price--value"]', el => el.textContent);
             propertyUrls.push(propertyUrl);
@@ -134,7 +137,7 @@ class HouseBot {
             key: 'porterbmoody@serene-courier-402114.iam.gserviceaccount.com',
             scopes: ['https://www.googleapis.com/auth/spreadsheets']
         });
-        
+
         const creds = JSON.parse(await fs.readFile('client_secret.json'));
         this.doc = new GoogleSpreadsheet(this.spreadsheetId, serviceAccountAuth);
         await this.doc.loadInfo();
@@ -149,7 +152,7 @@ class HouseBot {
     checkForDuplicates(existingData, newRow, keyField) {
         return existingData.some(row => row[keyField] === newRow[keyField]);
     }
-    
+
     async uploadToGoogleSheets(data) {
         const existingData = await this.getExistingData();
         const uniqueData = data.filter(row => !this.checkForDuplicates(existingData, row, this.keyField));
