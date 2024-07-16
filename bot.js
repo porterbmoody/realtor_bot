@@ -37,11 +37,21 @@ class HouseBot {
 
     async saveData() {
         try {
-            const csv = parse(this.data);
-            await fs.writeFile('data.csv', csv);
+            const fields = ['property_url', 'price', 'square_footage'];
+            const csv = parse(this.data, { fields });
+            fs.writeFileSync("data.csv", csv);
             console.log('CSV file saved successfully.');
         } catch (error) {
             console.error('Error saving CSV file:', error);
+        }
+    }
+
+    async saveToJson() {
+        try {
+            fs.writeFileSync("data.json", JSON.stringify(this.data));
+            console.log('Data saved to JSON file successfully.');
+        } catch (error) {
+            console.error('Error saving data to JSON file:', error);
         }
     }
 
@@ -75,7 +85,6 @@ class HouseBot {
     async runBot() {
         await this.launchBrowser();
         await this.collectData();
-        await this.saveData();
         // await this.authenticateGoogleSheets();
         // await this.uploadToGoogleSheets();
         await this.browser.close();
@@ -97,68 +106,38 @@ class HouseBot {
     }
 
     async collectData() {
-        const prices = [];
-        const squareFootages = [];
-        const propertyUrls = [];
-
         await this.page.goto(this.url);
         const totalHomes = await this.page.$eval('[class="homes summary"]', el => el.textContent);
-        console.log(`total homes listed in the area:${totalHomes}`)
-
-        // await this.autoScroll();
-
-        const property_element = await this.page.$$('[data-rf-test-name="mapHomeCard"]');
-        for (const property_element of property_elements.slice(0, 2)) {
+        console.log(`total homes listed in the area: ${totalHomes}`);
+    
+        const property_elements = await this.page.$$('[data-rf-test-name="mapHomeCard"]');
+        const number_of_homes_to_srape = property_elements.length;
+        console.log(`number_of_homes_to_srape: ${number_of_homes_to_srape}`);
+    
+        for (let i = 0; i < Math.min(2, property_elements.length); i++) {
+            await this.page.goto(this.url); // Go back to the main page for each iteration
+            await this.page.waitForSelector('[data-rf-test-name="mapHomeCard"]');
+            
+            const property_elements = await this.page.$$('[data-rf-test-name="mapHomeCard"]');
+            const property_element = property_elements[i];
+    
             const propertyUrl = await property_element.$eval('a', a => a.href);
-            const priceText = await property_element.$eval('[class="bp-Homecard__Price--value"]', el => el.textContent);
-            propertyUrls.push(propertyUrl);
-            prices.push(this.parseNumber(priceText));
-        }
-
-        for (const propertyUrl of propertyUrls) {
+            const price = await property_element.$eval('[class="bp-Homecard__Price--value"]', el => el.textContent);
+    
             await this.page.goto(propertyUrl);
-            await this.sleep(2000);
-
+            await this.page.waitForSelector('[class="stat-block sqft-section"]');
+    
             const squareFootageText = await this.page.$eval('[class="stat-block sqft-section"]', el => el.textContent);
-            squareFootages.push(this.parseNumber(squareFootageText));
+            const squareFootage = this.parseNumber(squareFootageText);
+            
+            console.log(squareFootage);
+            this.data.push({ propertyUrl, price, squareFootage });
+            
             await this.randomDelay();
         }
-
-        this.data = propertyUrls.map((url, index) => ({
-            price: prices[index],
-            square_footage: squareFootages[index],
-            property_url: url
-        }));
-    }
-
-    async authenticate() {
-        const serviceAccountAuth = new JWT({
-            email: 'porterbmoody@gmail.com',
-            key: 'porterbmoody@serene-courier-402114.iam.gserviceaccount.com',
-            scopes: ['https://www.googleapis.com/auth/spreadsheets']
-        });
-
-        const creds = JSON.parse(await fs.readFile('client_secret.json'));
-        this.doc = new GoogleSpreadsheet(this.spreadsheetId, serviceAccountAuth);
-        await this.doc.loadInfo();
-        this.sheet = this.doc.sheetsByIndex[0];
-    }
-    
-    async getExistingData() {
-        const rows = await this.sheet.getRows();
-        return rows.map(row => row._rawData);
-    }
-    
-    checkForDuplicates(existingData, newRow, keyField) {
-        return existingData.some(row => row[keyField] === newRow[keyField]);
-    }
-
-    async uploadToGoogleSheets(data) {
-        const existingData = await this.getExistingData();
-        const uniqueData = data.filter(row => !this.checkForDuplicates(existingData, row, this.keyField));
-        for (const row of uniqueData) {
-            await this.sheet.addRow(row);
-        }
+        console.log(this.data);
+        // await this.saveData();
+        await this.saveToJson()
     }
 }
 
