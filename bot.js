@@ -102,15 +102,15 @@ class HouseBot {
         const propertyUrls = [];
 
         await this.page.goto(this.url);
-        const totalHomes = await property.$eval('[class="homes summary"]', el => el.textContent);
+        const totalHomes = await this.page.$eval('[class="homes summary"]', el => el.textContent);
         console.log(`total homes listed in the area:${totalHomes}`)
 
         // await this.autoScroll();
 
-        const properties = await this.page.$$('[data-rf-test-name="mapHomeCard"]');
-        for (const property of properties.slice(0, 2)) {
-            const propertyUrl = await property.$eval('a', a => a.href);
-            const priceText = await property.$eval('[class="bp-Homecard__Price--value"]', el => el.textContent);
+        const property_element = await this.page.$$('[data-rf-test-name="mapHomeCard"]');
+        for (const property_element of property_elements.slice(0, 2)) {
+            const propertyUrl = await property_element.$eval('a', a => a.href);
+            const priceText = await property_element.$eval('[class="bp-Homecard__Price--value"]', el => el.textContent);
             propertyUrls.push(propertyUrl);
             prices.push(this.parseNumber(priceText));
         }
