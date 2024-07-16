@@ -15,22 +15,8 @@ class HouseBot {
         this.sheetUrl = 'https://docs.google.com/spreadsheets/d/1Iz6G0vnUSogAjWMwnSJ1aJbNRr3VoqU3c-BaC1xSWVo/edit?fbclid=IwZXh0bgNhZW0CMTEAAR1Wu_u_d5yRlZbBKxJ2ndxb7AHpsEOxjqH0k7vRCs3F6vo1f5ZhLpAb0rs_aem_-jf0aobbjchuCTbOYFsOug&pli=1&gid=0#gid=0';
         this.spreadsheetId = this.sheetUrl.split('/d/')[1].split('/edit')[0];
         this.propertyData = [];
-    }
-
-    async init() {
-        const options = new chrome.Options();
-        options.addArguments('--user-data-dir=C:\\Users\\Owner\\AppData\\Local\\Google\\Chrome\\User Data');
-        options.addArguments('--profile-directory=Default');
-        options.addArguments('--disable-blink-features=AutomationControlled');
-        options.addArguments('start-maximized');
-        options.addArguments('--disable-infobars');
-        options.addArguments('--disable-extensions');
-        options.addArguments('--disable-gpu');
-        options.addArguments('--no-sandbox');
-        options.addArguments('--disable-dev-shm-usage');
-
-        this.driver = new Builder().forBrowser('chrome').setChromeOptions(options).build();
-        await this.driver.get(this.url);
+        this.page = null;
+        this.browser = null;
     }
 
     async autoScroll() {
@@ -60,6 +46,10 @@ class HouseBot {
         } catch (error) {
             console.error('Error saving CSV file:', error);
         }
+    }
+
+    sleep(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
     }
 
     async randomDelay(minSeconds = 2, maxSeconds = 5) {
@@ -119,7 +109,30 @@ class HouseBot {
         return parseFloat(value.replace(/[^0-9.]/g, ''));
     }
 
-    async scrapeData() {
+    async runBot() {
+        const options = new chrome.Options();
+        options.addArguments('--user-data-dir=C:\\Users\\Owner\\AppData\\Local\\Google\\Chrome\\User Data');
+        options.addArguments('--no-sandbox');
+        options.addArguments('--disable-dev-shm-usage');
+
+        this.driver = new Builder().forBrowser('chrome').setChromeOptions(options).build();
+        await this.driver.get(this.url);
+        await new Promise(resolve => setTimeout(resolve, 2000));
+
+        this.browser = await puppeteer.launch({
+            headless: false,
+            args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-notifications',
+                '--disable-extensions',
+                '--disable-blink-features=AutomationControlled',
+                // '--user-data-dir=C:\\Users\\Owner\\AppData\\Local\\Google\\Chrome\\User Data'
+                // '--profile-directory=Default',
+                // 'start-maximized'
+            ]
+        });
+        this.page = await this.browser.newPage();
         const prices = [];
         const squareFootages = [];
         const propertyUrls = [];
@@ -166,15 +179,9 @@ class HouseBot {
         await this.driver.quit();
     }
 
-    async runBot() {
-        // await this.closeChrome();
-        await this.init();
-        await this.scrapeData();
-    }
 }
 
 (async () => {
     const bot = new HouseBot();
-    await bot.closeChrome();
     await bot.runBot();
 })();
