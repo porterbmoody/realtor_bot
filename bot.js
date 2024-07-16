@@ -178,7 +178,6 @@ class HouseBot {
 
         await this.driver.quit();
     }
-
 }
 
 (async () => {
