@@ -86,4 +86,3 @@ values = result.get("values", [])
 values
 # %%
 
-# {"installed":{"client_id":"183422236832-14cfekqm45hvo71uu1rhev5geo68h1l0.apps.googleusercontent.com","project_id":"bloom-426017","auth_uri":"https://accounts.google.com/o/oauth2/auth","token_uri":"https://oauth2.googleapis.com/token","auth_provider_x509_cert_url":"https://www.googleapis.com/oauth2/v1/certs","client_secret":"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","redirect_uris":["http://localhost"]}}
