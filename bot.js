@@ -3,7 +3,7 @@ const csv = require('csv-parser');
 const { stringify } = require('csv-stringify/sync');
 const puppeteer = require('puppeteer');
 const { parse } = require('json2csv');
-
+// git add .; git commit 'changes';git pull;git push;
 class HouseBot {
     constructor() {
         this.url = 'https://www.redfin.com/city/6208/FL/Fort-Myers';
