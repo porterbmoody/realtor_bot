@@ -112,7 +112,7 @@ class HouseBot {
     
         const property_elements = await this.page.$$('[data-rf-test-name="mapHomeCard"]');
         const number_of_homes_to_scrape = property_elements.length;
-        const number_of_properties_to_scrape = 5;
+        const number_of_properties_to_scrape = 10;
         console.log(`Number of homes to scrape: ${number_of_properties_to_scrape}`);
 
         for (let i = 0; i < Math.min(number_of_properties_to_scrape, property_elements.length); i++) {
@@ -129,21 +129,19 @@ class HouseBot {
     
             await this.page.waitForSelector('[class="stat-block sqft-section"]', { timeout: 5000 });
             const squareFootage = await this.page.$eval('[class="stat-block sqft-section"]', el => el.textContent);
+            console.log(`price: ${price}`);
             console.log(`Square Footage: ${squareFootage}`);
     
             // const parsedSquareFootage = this.parseNumber(squareFootage);
     
-            this.data.push({ propertyUrl, price, squareFootage });
+            this.data.push({ price, squareFootage, propertyUrl });
     
             await this.randomDelay();
         }
     
         console.log('All data collected:', this.data);
-    
-        // Save data to CSV or JSON
         await this.saveData();
         // await this.saveToJson();
-    
         await this.browser.close();
     }
     
