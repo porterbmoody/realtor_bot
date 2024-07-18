@@ -11,6 +11,9 @@ class HouseBot {
         this.keyField = 'property_url';
         this.sheetUrl = 'https://docs.google.com/spreadsheets/d/1Iz6G0vnUSogAjWMwnSJ1aJbNRr3VoqU3c-BaC1xSWVo/edit?fbclid=IwZXh0bgNhZW0CMTEAAR1Wu_u_d5yRlZbBKxJ2ndxb7AHpsEOxjqH0k7vRCs3F6vo1f5ZhLpAb0rs_aem_-jf0aobbjchuCTbOYFsOug&pli=1&gid=0#gid=0';
         this.spreadsheetId = this.sheetUrl.split('/d/')[1].split('/edit')[0];
+        this.property_card_selector = '[class="bp-Homecard bp-InteractiveHomecard MapHomecardWrapper MapHomecardWrapper--selected MapHomecardWrapper--photosLoading bp-InteractiveHomecard--hideNumIndicator clickable"]';
+        this.property_url_element_selector = '[class="link-and-anchor visuallyHidden"]';
+        this.price_selector = '[data-rf-test-id="abp-price"]';
         this.data = [];
         this.page = null;
         this.browser = null;
@@ -38,7 +41,6 @@ class HouseBot {
     
     async updateData() {
         const fields = ['propertyUrl', 'price', 'squareFootage'];
-    
         try {
             if (!this.data || this.data.length === 0) {
                 console.log('No data to save. Skipping CSV write operation.');
@@ -100,7 +102,6 @@ class HouseBot {
         await this.collectData();
         // await this.authenticateGoogleSheets();
         // await this.uploadToGoogleSheets();
-        await this.browser.close();
     }
 
     async launchBrowser() {
@@ -116,31 +117,35 @@ class HouseBot {
             ]
         });
         this.page = await this.browser.newPage();
+        console.log(`opening ${this.url}`);
+        await this.page.goto(this.url, { waitUntil: 'networkidle2' });
     }
+    
     async collectData() {
-        await this.page.goto(this.url);
+        
+        // await this.page.goto(this.url);
+        // await this.sleep(5000);
         const totalHomes = await this.page.$eval('[class="homes summary"]', el => el.textContent);
         console.log(`Total homes listed in the area: ${totalHomes}`);
-        await autoScroll()
+        // this.autoScroll()
+        // console.log('finding elements');
+        await this.page.waitForSelector(this.property_url_element_selector, { timeout: 10000 });
+        const property_urls = await this.page.$$eval(this.property_url_element_selector, links => links.map(link => link.href));
+        // const property_urls = await this.page.$$eval(this.property_card_selector, links => links.map(link => link.href));
+        console.log(property_urls);
+        // await this.sleep(120000);
     
-        await this.page.waitForSelector('[data-rf-test-name="mapHomeCard"]', { timeout: 10000 });
-        const property_elements = await this.page.$$('[data-rf-test-name="mapHomeCard"]');
-        // const number_of_properties_to_scrape = property_elements.length;
-        const number_of_properties_to_scrape = 2;
-        console.log(`Number of homes to scrape: ${number_of_properties_to_scrape}`);
+        // console.log(`proprty urls found ${property_urls.length}`);
+        // const number_of_properties_to_scrape = property_urls.length;
+        // const number_of_properties_to_scrape = 2;
+        // console.log(`Number of homes to scrape: ${number_of_properties_to_scrape}`);
+        // console.log('finding elements');
 
-        for (let i = 0; i < Math.min(number_of_properties_to_scrape, property_elements.length); i++) {
-            console.log(i);
-            await this.page.goto(this.url);
-            await this.page.waitForSelector('[data-rf-test-name="mapHomeCard"]');
-            
-            const property_elements = await this.page.$$('[data-rf-test-name="mapHomeCard"]');
-            const property_element = property_elements[i];
-    
-            const propertyUrl = await property_element.$eval('a', a => a.href);
-            const price = await property_element.$eval('[class="bp-Homecard__Price--value"]', el => el.textContent);
-            console.log(`Opening ${propertyUrl}`);
-            await this.page.goto(propertyUrl);
+        for (const property_url of property_urls.slice(0, 1)) {
+            console.log(`Opening ${property_url}`);
+            await this.page.goto(property_url);
+            console.log('getting price');
+            const price = await this.page.$eval(this.price_selector, el => el.textContent);
     
             let squareFootage;
             try {
@@ -149,23 +154,19 @@ class HouseBot {
             } catch (error) {
                 squareFootage = "Couldn't find element";
             }
-    
             console.log(`Price: ${price}`);
             console.log(`Square Footage: ${squareFootage}`);
     
-            // const parsedSquareFootage = this.parseNumber(squareFootage);
-    
-            this.data.push({ price, squareFootage, propertyUrl });
+            this.data.push({ price, squareFootage, property_url });
             console.log(this.data);
             await this.updateData();
-    
+
             await this.randomDelay();
         }
     
         await this.browser.close();
     }
-    
-    
+
     }
 (async () => {
     const bot = new HouseBot();
