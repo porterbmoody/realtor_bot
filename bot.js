@@ -37,8 +37,9 @@ class HouseBot {
 
     async saveData() {
         try {
-            const fields = ['property_url', 'price', 'square_footage'];
-            const csv = parse(this.data, { fields });
+            const fields = ['propertyUrl', 'price', 'squareFootage'];
+            const opts = { fields };
+            const csv = parse(this.data, opts);
             fs.writeFileSync("data.csv", csv);
             console.log('CSV file saved successfully.');
         } catch (error) {
@@ -104,18 +105,18 @@ class HouseBot {
         });
         this.page = await this.browser.newPage();
     }
-
     async collectData() {
         await this.page.goto(this.url);
         const totalHomes = await this.page.$eval('[class="homes summary"]', el => el.textContent);
-        console.log(`total homes listed in the area: ${totalHomes}`);
+        console.log(`Total homes listed in the area: ${totalHomes}`);
     
         const property_elements = await this.page.$$('[data-rf-test-name="mapHomeCard"]');
-        const number_of_homes_to_srape = property_elements.length;
-        console.log(`number_of_homes_to_srape: ${number_of_homes_to_srape}`);
-    
-        for (let i = 0; i < Math.min(2, property_elements.length); i++) {
-            await this.page.goto(this.url); // Go back to the main page for each iteration
+        const number_of_homes_to_scrape = property_elements.length;
+        const number_of_properties_to_scrape = 5;
+        console.log(`Number of homes to scrape: ${number_of_properties_to_scrape}`);
+
+        for (let i = 0; i < Math.min(number_of_properties_to_scrape, property_elements.length); i++) {
+            await this.page.goto(this.url);
             await this.page.waitForSelector('[data-rf-test-name="mapHomeCard"]');
             
             const property_elements = await this.page.$$('[data-rf-test-name="mapHomeCard"]');
@@ -123,24 +124,31 @@ class HouseBot {
     
             const propertyUrl = await property_element.$eval('a', a => a.href);
             const price = await property_element.$eval('[class="bp-Homecard__Price--value"]', el => el.textContent);
-    
+            console.log(`Opening ${propertyUrl}`);
             await this.page.goto(propertyUrl);
-            await this.page.waitForSelector('[class="stat-block sqft-section"]');
     
-            const squareFootageText = await this.page.$eval('[class="stat-block sqft-section"]', el => el.textContent);
-            const squareFootage = this.parseNumber(squareFootageText);
-            
-            console.log(squareFootage);
+            await this.page.waitForSelector('[class="stat-block sqft-section"]', { timeout: 5000 });
+            const squareFootage = await this.page.$eval('[class="stat-block sqft-section"]', el => el.textContent);
+            console.log(`Square Footage: ${squareFootage}`);
+    
+            // const parsedSquareFootage = this.parseNumber(squareFootage);
+    
             this.data.push({ propertyUrl, price, squareFootage });
-            
+    
             await this.randomDelay();
         }
-        console.log(this.data);
-        // await this.saveData();
-        await this.saveToJson()
+    
+        console.log('All data collected:', this.data);
+    
+        // Save data to CSV or JSON
+        await this.saveData();
+        // await this.saveToJson();
+    
+        await this.browser.close();
     }
-}
-
+    
+    
+    }
 (async () => {
     const bot = new HouseBot();
     await bot.runBot();
