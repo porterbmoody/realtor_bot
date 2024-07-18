@@ -1,9 +1,10 @@
-const fs = require('fs');
 const csv = require('csv-parser');
-const { stringify } = require('csv-stringify/sync');
+const { stringify } = require('csv-stringify');
 const puppeteer = require('puppeteer');
-const { parse } = require('json2csv');
-// git add .; git commit 'changes';git pull;git push;
+const fs = require('fs').promises;
+const { createReadStream } = require('fs');
+
+// git add .; git commit -m 'changes';git pull;git push;
 class HouseBot {
     constructor() {
         this.url = 'https://www.redfin.com/city/6208/FL/Fort-Myers';
@@ -13,6 +14,7 @@ class HouseBot {
         this.data = [];
         this.page = null;
         this.browser = null;
+        this.filePath = 'data.csv';
     }
 
     async autoScroll() {
@@ -33,52 +35,30 @@ class HouseBot {
             });
         });
     }
-    const fs = require('fs');
-    const csv = require('csv-parser');
-    const { stringify } = require('csv-stringify/sync');
     
-    async function saveData(newRow) {
-        const filePath = 'data.csv';
+    async updateData() {
         const fields = ['propertyUrl', 'price', 'squareFootage'];
-        
+    
         try {
-            // Check if file exists
-            if (!fs.existsSync(filePath)) {
-                // If file doesn't exist, create it with headers
-                const header = stringify([fields]);
-                fs.writeFileSync(filePath, header);
+            if (!this.data || this.data.length === 0) {
+                console.log('No data to save. Skipping CSV write operation.');
+                return;
             }
     
-            // Read existing data to check for duplicates
-            const existingData = [];
-            await new Promise((resolve, reject) => {
-                fs.createReadStream(filePath)
-                    .pipe(csv())
-                    .on('data', (row) => existingData.push(row))
-                    .on('end', resolve)
-                    .on('error', reject);
+            // Convert JSON data to CSV
+            const csv = stringify(this.data, {
+                header: true,
+                columns: fields
             });
     
-            // Check if the new row already exists
-            const isDuplicate = existingData.some(row => 
-                row.propertyUrl === newRow.propertyUrl &&
-                row.price === newRow.price &&
-                row.squareFootage === newRow.squareFootage
-            );
-    
-            if (!isDuplicate) {
-                // Append the new row to the CSV file
-                const newRowString = stringify([newRow], { header: false });
-                fs.appendFileSync(filePath, newRowString);
-                console.log('New row added to CSV file successfully.');
-            } else {
-                console.log('Duplicate row not added to CSV file.');
-            }
+            // Write the CSV to file
+            await fs.writeFile(this.filePath, csv);
+            console.log('CSV file saved successfully.');
         } catch (error) {
-            console.error('Error saving to CSV file:', error);
+            console.error('Error saving CSV file:', error);
+            console.log('Data attempted to save:', this.data);
         }
     }
-
     async saveToJson() {
         try {
             fs.writeFileSync("data.json", JSON.stringify(this.data));
@@ -143,7 +123,7 @@ class HouseBot {
         console.log(`Total homes listed in the area: ${totalHomes}`);
     
         const property_elements = await this.page.$$('[data-rf-test-name="mapHomeCard"]');
-        const number_of_homes_to_scrape = property_elements.length;
+        // const number_of_properties_to_scrape = property_elements.length;
         const number_of_properties_to_scrape = 100;
         console.log(`Number of homes to scrape: ${number_of_properties_to_scrape}`);
 
@@ -174,7 +154,8 @@ class HouseBot {
             // const parsedSquareFootage = this.parseNumber(squareFootage);
     
             this.data.push({ price, squareFootage, propertyUrl });
-            await this.saveData();
+            console.log(this.data);
+            await this.updateData();
     
             await this.randomDelay();
         }
