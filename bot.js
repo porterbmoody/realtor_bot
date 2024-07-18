@@ -121,10 +121,12 @@ class HouseBot {
         await this.page.goto(this.url);
         const totalHomes = await this.page.$eval('[class="homes summary"]', el => el.textContent);
         console.log(`Total homes listed in the area: ${totalHomes}`);
+        await autoScroll()
     
+        await this.page.waitForSelector('[data-rf-test-name="mapHomeCard"]', { timeout: 10000 });
         const property_elements = await this.page.$$('[data-rf-test-name="mapHomeCard"]');
         // const number_of_properties_to_scrape = property_elements.length;
-        const number_of_properties_to_scrape = 100;
+        const number_of_properties_to_scrape = 2;
         console.log(`Number of homes to scrape: ${number_of_properties_to_scrape}`);
 
         for (let i = 0; i < Math.min(number_of_properties_to_scrape, property_elements.length); i++) {
