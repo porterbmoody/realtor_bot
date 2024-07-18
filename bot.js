@@ -1,7 +1,6 @@
-const { GoogleSpreadsheet } = require('google-spreadsheet');
 const fs = require('fs');
-const { exec } = require('child_process');
-const { JWT } = require('google-auth-library');
+const csv = require('csv-parser');
+const { stringify } = require('csv-stringify/sync');
 const puppeteer = require('puppeteer');
 const { parse } = require('json2csv');
 
@@ -34,38 +33,49 @@ class HouseBot {
             });
         });
     }
-    async saveData() {
+    const fs = require('fs');
+    const csv = require('csv-parser');
+    const { stringify } = require('csv-stringify/sync');
+    
+    async function saveData(newRow) {
         const filePath = 'data.csv';
+        const fields = ['propertyUrl', 'price', 'squareFootage'];
+        
         try {
-            let fileExists = true;
-            try {
-                await fsPromises.access(filePath);
-            } catch (error) {
-                fileExists = false;
+            // Check if file exists
+            if (!fs.existsSync(filePath)) {
+                // If file doesn't exist, create it with headers
+                const header = stringify([fields]);
+                fs.writeFileSync(filePath, header);
             }
-
-            let existingData = [];
-            if (fileExists) {
-                const csvFileContent = await fsPromises.readFile(filePath, 'utf8');
-                existingData = parseCsv(csvFileContent, { columns: true });
-            }
-
-            // Filter out duplicates from the current data
-            const newData = this.data.filter(newEntry => 
-                !existingData.some(existingEntry => existingEntry.propertyUrl === newEntry.propertyUrl)
+    
+            // Read existing data to check for duplicates
+            const existingData = [];
+            await new Promise((resolve, reject) => {
+                fs.createReadStream(filePath)
+                    .pipe(csv())
+                    .on('data', (row) => existingData.push(row))
+                    .on('end', resolve)
+                    .on('error', reject);
+            });
+    
+            // Check if the new row already exists
+            const isDuplicate = existingData.some(row => 
+                row.propertyUrl === newRow.propertyUrl &&
+                row.price === newRow.price &&
+                row.squareFootage === newRow.squareFootage
             );
-
-            // Append new data to existing data
-            existingData = [...existingData, ...newData];
-
-            // Convert updated data back to CSV
-            const csv = stringify(existingData, { header: true });
-
-            // Write updated CSV to file
-            await fsPromises.writeFile(filePath, csv);
-            console.log('CSV file updated successfully.');
+    
+            if (!isDuplicate) {
+                // Append the new row to the CSV file
+                const newRowString = stringify([newRow], { header: false });
+                fs.appendFileSync(filePath, newRowString);
+                console.log('New row added to CSV file successfully.');
+            } else {
+                console.log('Duplicate row not added to CSV file.');
+            }
         } catch (error) {
-            console.error('Error updating CSV file:', error);
+            console.error('Error saving to CSV file:', error);
         }
     }
 
