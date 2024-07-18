@@ -34,16 +34,38 @@ class HouseBot {
             });
         });
     }
-
     async saveData() {
+        const filePath = 'data.csv';
         try {
-            const fields = ['propertyUrl', 'price', 'squareFootage'];
-            const opts = { fields };
-            const csv = parse(this.data, opts);
-            fs.writeFileSync("data.csv", csv);
-            console.log('CSV file saved successfully.');
+            let fileExists = true;
+            try {
+                await fsPromises.access(filePath);
+            } catch (error) {
+                fileExists = false;
+            }
+
+            let existingData = [];
+            if (fileExists) {
+                const csvFileContent = await fsPromises.readFile(filePath, 'utf8');
+                existingData = parseCsv(csvFileContent, { columns: true });
+            }
+
+            // Filter out duplicates from the current data
+            const newData = this.data.filter(newEntry => 
+                !existingData.some(existingEntry => existingEntry.propertyUrl === newEntry.propertyUrl)
+            );
+
+            // Append new data to existing data
+            existingData = [...existingData, ...newData];
+
+            // Convert updated data back to CSV
+            const csv = stringify(existingData, { header: true });
+
+            // Write updated CSV to file
+            await fsPromises.writeFile(filePath, csv);
+            console.log('CSV file updated successfully.');
         } catch (error) {
-            console.error('Error saving CSV file:', error);
+            console.error('Error updating CSV file:', error);
         }
     }
 
@@ -112,10 +134,11 @@ class HouseBot {
     
         const property_elements = await this.page.$$('[data-rf-test-name="mapHomeCard"]');
         const number_of_homes_to_scrape = property_elements.length;
-        const number_of_properties_to_scrape = 10;
+        const number_of_properties_to_scrape = 100;
         console.log(`Number of homes to scrape: ${number_of_properties_to_scrape}`);
 
         for (let i = 0; i < Math.min(number_of_properties_to_scrape, property_elements.length); i++) {
+            console.log(i);
             await this.page.goto(this.url);
             await this.page.waitForSelector('[data-rf-test-name="mapHomeCard"]');
             
@@ -127,21 +150,25 @@ class HouseBot {
             console.log(`Opening ${propertyUrl}`);
             await this.page.goto(propertyUrl);
     
-            await this.page.waitForSelector('[class="stat-block sqft-section"]', { timeout: 5000 });
-            const squareFootage = await this.page.$eval('[class="stat-block sqft-section"]', el => el.textContent);
-            console.log(`price: ${price}`);
+            let squareFootage;
+            try {
+                await this.page.waitForSelector('[class="stat-block sqft-section"]', { timeout: 5000 });
+                squareFootage = await this.page.$eval('[class="stat-block sqft-section"]', el => el.textContent);
+            } catch (error) {
+                squareFootage = "Couldn't find element";
+            }
+    
+            console.log(`Price: ${price}`);
             console.log(`Square Footage: ${squareFootage}`);
     
             // const parsedSquareFootage = this.parseNumber(squareFootage);
     
             this.data.push({ price, squareFootage, propertyUrl });
+            await this.saveData();
     
             await this.randomDelay();
         }
     
-        console.log('All data collected:', this.data);
-        await this.saveData();
-        // await this.saveToJson();
         await this.browser.close();
     }
     
