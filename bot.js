@@ -2,7 +2,6 @@ const csv = require('csv-parser');
 const { stringify } = require('csv-stringify');
 const puppeteer = require('puppeteer');
 const fs = require('fs').promises;
-const { createReadStream } = require('fs');
 
 // git add .; git commit -m 'changes';git pull;git push;
 class HouseBot {
@@ -14,6 +13,8 @@ class HouseBot {
         this.property_card_selector = '[class="bp-Homecard bp-InteractiveHomecard MapHomecardWrapper MapHomecardWrapper--selected MapHomecardWrapper--photosLoading bp-InteractiveHomecard--hideNumIndicator clickable"]';
         this.property_url_element_selector = '[class="link-and-anchor visuallyHidden"]';
         this.price_selector = '[data-rf-test-id="abp-price"]';
+        this.tab_selector = '[class="TabBarItem__label"]';
+        this.row_selector = '[class="tableRow"]';
         this.data = [];
         this.page = null;
         this.browser = null;
@@ -38,22 +39,20 @@ class HouseBot {
             });
         });
     }
-    
+
     async updateData() {
-        const fields = ['propertyUrl', 'price', 'squareFootage'];
+        const fields = ['property_url', 'price', 'square_footage'];
         try {
             if (!this.data || this.data.length === 0) {
                 console.log('No data to save. Skipping CSV write operation.');
                 return;
             }
     
-            // Convert JSON data to CSV
             const csv = stringify(this.data, {
                 header: true,
                 columns: fields
             });
     
-            // Write the CSV to file
             await fs.writeFile(this.filePath, csv);
             console.log('CSV file saved successfully.');
         } catch (error) {
@@ -120,51 +119,142 @@ class HouseBot {
         console.log(`opening ${this.url}`);
         await this.page.goto(this.url, { waitUntil: 'networkidle2' });
     }
+
+    async clickTableTab() {
+        await page.evaluate(() => {
+            const tab = document.querySelector('.TabBarItem__label[data-text="Table"]');
+            
+            // Check if the element exists and click it
+            if (tab) {
+                tab.click();
+                console.log('Clicked on the tab with data-text="Table"');
+            } else {
+                console.error('No tab with data-text="Table" found.');
+            }
+        });
+    }
     
     async collectData() {
-        
-        // await this.page.goto(this.url);
-        // await this.sleep(5000);
-        const totalHomes = await this.page.$eval('[class="homes summary"]', el => el.textContent);
-        console.log(`Total homes listed in the area: ${totalHomes}`);
-        // this.autoScroll()
-        // console.log('finding elements');
-        await this.page.waitForSelector(this.property_url_element_selector, { timeout: 10000 });
-        const property_urls = await this.page.$$eval(this.property_url_element_selector, links => links.map(link => link.href));
-        // const property_urls = await this.page.$$eval(this.property_card_selector, links => links.map(link => link.href));
-        console.log(property_urls);
-        // await this.sleep(120000);
+        try {
+            await this.page.waitForSelector('[class="homes summary"]', { timeout: 10000 });
+            const totalHomes = await this.page.$eval('[class="homes summary"]', el => el.textContent);
+            console.log(`Total homes listed in the area: ${totalHomes}`);
     
-        // console.log(`proprty urls found ${property_urls.length}`);
-        // const number_of_properties_to_scrape = property_urls.length;
-        // const number_of_properties_to_scrape = 2;
-        // console.log(`Number of homes to scrape: ${number_of_properties_to_scrape}`);
-        // console.log('finding elements');
-
-        for (const property_url of property_urls.slice(0, 1)) {
-            console.log(`Opening ${property_url}`);
-            await this.page.goto(property_url);
-            console.log('getting price');
-            const price = await this.page.$eval(this.price_selector, el => el.textContent);
+            await clickTableTab();
     
-            let squareFootage;
-            try {
-                await this.page.waitForSelector('[class="stat-block sqft-section"]', { timeout: 5000 });
-                squareFootage = await this.page.$eval('[class="stat-block sqft-section"]', el => el.textContent);
-            } catch (error) {
-                squareFootage = "Couldn't find element";
+            console.log('sleep 120 secs');
+            await this.sleep(120000);
+    
+            await this.page.waitForSelector(this.property_url_element_selector, { timeout: 10000 });
+            const property_urls = await this.page.$$eval(this.property_url_element_selector, links => links.map(link => link.href));
+            console.log(`Found ${property_urls.length} property URLs`);
+    
+            for (const property_url of property_urls) {
+                try {
+                    console.log(`Opening ${property_url}`);
+                    await this.page.goto(property_url, { waitUntil: 'networkidle0', timeout: 30000 });
+    
+                    console.log('Getting price');
+                    await this.page.waitForSelector(this.price_selector, { timeout: 10000 });
+                    const price = await this.page.$eval(this.price_selector, el => {
+                        const statsValueElement = el.querySelector('div.statsValue');
+                        return statsValueElement ? statsValueElement.textContent.trim() : null;
+                    });
+    
+                    let square_footage;
+                    try {
+                        await this.page.waitForSelector('[class="stat-block sqft-section"]', { timeout: 5000 });
+                        square_footage = await this.page.$eval('[class="stat-block sqft-section"]', el => el.textContent.trim());
+                    } catch (error) {
+                        square_footage = "Couldn't find element";
+                        console.log(`Error getting square footage: ${error.message}`);
+                    }
+    
+                    console.log(`Price: ${price}`);
+                    console.log(`Square Footage: ${square_footage}`);
+    
+                    this.data.push({ price, square_footage, property_url });
+                    await this.updateData();
+    
+                    await this.randomDelay();
+                } catch (error) {
+                    console.error(`Error processing ${property_url}: ${error.message}`);
+                }
             }
-            console.log(`Price: ${price}`);
-            console.log(`Square Footage: ${squareFootage}`);
-    
-            this.data.push({ price, squareFootage, property_url });
-            console.log(this.data);
-            await this.updateData();
-
-            await this.randomDelay();
+        } catch (error) {
+            console.error(`An error occurred in collectData: ${error.message}`);
+        } finally {
+            await this.browser.close();
         }
+    }
     
-        await this.browser.close();
+
+    async collectData() {
+        try {
+            await this.page.waitForSelector('[class="homes summary"]', { timeout: 10000 });
+            const totalHomes = await this.page.$eval('[class="homes summary"]', el => el.textContent);
+            console.log(`Total homes listed in the area: ${totalHomes}`);
+            // Find and click the tab with text including "Table"
+            await this.page.waitForSelector(this.tab_selector, { timeout: 10000 });
+            const tabs = await this.page.$$(this.tab_selector);
+            let tableTabFound = false;
+            for (let tab of tabs) {
+                const tabText = await this.page.evaluate(el => el.textContent, tab);
+                if (tabText.includes('Table')) {
+                    console.log(`Found tab with "Table": ${tabText}`);
+                    await tab.click();
+                    tableTabFound = true;
+                    break;
+                }
+            }
+            if (!tableTabFound) {
+                console.error('No tab with "Table" found.');
+                return;
+            }
+    
+            console.log('sleep 120 secs')
+            await this.sleep(120000);
+    
+            await this.page.waitForSelector(this.property_url_element_selector, { timeout: 10000 });
+            const property_urls = await this.page.$$eval(this.property_url_element_selector, links => links.map(link => link.href));
+            console.log(`Found ${property_urls.length} property URLs`);
+    
+            for (const property_url of property_urls) {
+                try {
+                    console.log(`Opening ${property_url}`);
+                    await this.page.goto(property_url, { waitUntil: 'networkidle0', timeout: 30000 });
+                    
+                    console.log('Getting price');
+                    await this.page.waitForSelector(this.price_selector, { timeout: 10000 });
+                    const price = await this.page.$eval(this.price_selector, el => {
+                        const statsValueElement = el.querySelector('div.statsValue');
+                        return statsValueElement ? statsValueElement.textContent.trim() : null;
+                    });
+                    let square_footage;
+                    try {
+                        await this.page.waitForSelector('[class="stat-block sqft-section"]', { timeout: 5000 });
+                        square_footage = await this.page.$eval('[class="stat-block sqft-section"]', el => el.textContent.trim());
+                    } catch (error) {
+                        square_footage = "Couldn't find element";
+                        console.log(`Error getting square footage: ${error.message}`);
+                    }
+    
+                    console.log(`Price: ${price}`);
+                    console.log(`Square Footage: ${square_footage}`);
+    
+                    this.data.push({ price, square_footage, property_url });
+                    await this.updateData();
+    
+                    await this.randomDelay();
+                } catch (error) {
+                    console.error(`Error processing ${property_url}: ${error.message}`);
+                }
+            }
+        } catch (error) {
+            console.error(`An error occurred in collectData: ${error.message}`);
+        } finally {
+            await this.browser.close();
+        }
     }
 
     }
