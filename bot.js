@@ -1,264 +1,231 @@
 const csv = require('csv-parser');
 const { stringify } = require('csv-stringify');
 const puppeteer = require('puppeteer');
-const fs = require('fs').promises;
+const fs = require('fs');
+// const { promisify } = require('util');
+// const readFileAsync = util.promisify(fs.readFile);
 
-// git add .; git commit -m 'changes';git pull;git push;
 class HouseBot {
-    constructor() {
-        this.url = 'https://www.redfin.com/city/6208/FL/Fort-Myers';
-        this.keyField = 'property_url';
-        this.sheetUrl = 'https://docs.google.com/spreadsheets/d/1Iz6G0vnUSogAjWMwnSJ1aJbNRr3VoqU3c-BaC1xSWVo/edit?fbclid=IwZXh0bgNhZW0CMTEAAR1Wu_u_d5yRlZbBKxJ2ndxb7AHpsEOxjqH0k7vRCs3F6vo1f5ZhLpAb0rs_aem_-jf0aobbjchuCTbOYFsOug&pli=1&gid=0#gid=0';
-        this.spreadsheetId = this.sheetUrl.split('/d/')[1].split('/edit')[0];
-        this.property_card_selector = '[class="bp-Homecard bp-InteractiveHomecard MapHomecardWrapper MapHomecardWrapper--selected MapHomecardWrapper--photosLoading bp-InteractiveHomecard--hideNumIndicator clickable"]';
-        this.property_url_element_selector = '[class="link-and-anchor visuallyHidden"]';
-        this.price_selector = '[data-rf-test-id="abp-price"]';
-        this.tab_selector = '[class="TabBarItem__label"]';
-        this.row_selector = '[class="tableRow"]';
-        this.data = [];
-        this.page = null;
-        this.browser = null;
-        this.filePath = 'data.csv';
-    }
+	constructor() {
+		this.selectors = null;
+		this.data = [];
+		this.page = null;
+		this.browser = null;
+		this.filePath = 'data.csv';
+        this.fileContent = fs.readFileSync('meta_data.json', 'utf8');
+        this.selectors = JSON.parse(this.fileContent);
+		this.propertyUrlsFilePath = 'propertyUrls.json';
+        // this.spreadsheetId = this.sheetUrl.split('/d/')[1].split('/edit')[0];
+	}
 
-    async autoScroll() {
-        await this.page.evaluate(async () => {
-            await new Promise((resolve) => {
-                let totalHeight = 0;
-                const distance = 100;
-                const timer = setInterval(() => {
-                    const scrollHeight = document.body.scrollHeight;
-                    window.scrollBy(0, distance);
-                    totalHeight += distance;
+	async autoScroll() {
+		await this.page.evaluate(async () => {
+			await new Promise((resolve) => {
+				let totalHeight = 0;
+				const distance = 100;
+				const timer = setInterval(() => {
+					const scrollHeight = document.body.scrollHeight;
+					window.scrollBy(0, distance);
+					totalHeight += distance;
 
-                    if (totalHeight >= scrollHeight - window.innerHeight) {
-                        clearInterval(timer);
-                        resolve();
-                    }
-                }, 100);
-            });
-        });
-    }
+					if (totalHeight >= scrollHeight - window.innerHeight) {
+						clearInterval(timer);
+						resolve();
+					}
+				}, 100);
+			});
+		});
+	}
 
-    async updateData() {
-        const fields = ['property_url', 'price', 'square_footage'];
-        try {
-            if (!this.data || this.data.length === 0) {
-                console.log('No data to save. Skipping CSV write operation.');
-                return;
-            }
-    
-            const csv = stringify(this.data, {
-                header: true,
-                columns: fields
-            });
-    
-            await fs.writeFile(this.filePath, csv);
-            console.log('CSV file saved successfully.');
-        } catch (error) {
-            console.error('Error saving CSV file:', error);
-            console.log('Data attempted to save:', this.data);
-        }
-    }
-    async saveToJson() {
-        try {
-            fs.writeFileSync("data.json", JSON.stringify(this.data));
-            console.log('Data saved to JSON file successfully.');
-        } catch (error) {
-            console.error('Error saving data to JSON file:', error);
-        }
-    }
+	async updateData() {
+		const fields = ['propertyUrl', 'price', 'squareFootage'];
+		try {
+			if (!this.data || this.data.length === 0) {
+				console.log('No data to save. Skipping CSV write operation.');
+				return;
+			}
 
-    sleep(ms) {
-        return new Promise(resolve => setTimeout(resolve, ms));
-    }
+			const csvStringifier = promisify(stringify);
+			const csv = await csvStringifier(this.data, {
+				header: true,
+				columns: fields
+			});
 
-    async randomDelay(minSeconds = 2, maxSeconds = 5) {
-        const delay = Math.random() * (maxSeconds - minSeconds) + minSeconds;
-        return new Promise(resolve => setTimeout(resolve, delay * 1000));
-    }
+			await fs.writeFile(this.filePath, csv);
+			console.log('CSV file updated successfully.');
+		} catch (error) {
+			console.error('Error updating CSV file:', error);
+			console.log('Data attempted to save:', this.data);
+		}
+		await this.randomDelay();
+	}
 
-    async closeChrome() {
-        return new Promise((resolve, reject) => {
-            exec('taskkill /F /IM chrome.exe', (error, stdout, stderr) => {
-                if (error) {
-                    console.log('Error closing Chrome:', error);
-                    resolve();
-                } else {
-                    console.log('Chrome has been closed.');
-                    resolve();
-                }
-            });
-        });
-    }
+	async savePropertyUrls() {
+		fs.writeFile(this.propertyUrlsFilePath, JSON.stringify(this.propertyUrls), 'utf8', function (err) {
+			if (err) {
+				return console.log(err);
+			}
+			console.log("The file was saved!");
+		}); 
+	}
 
-    parseNumber(value) {
-        return parseFloat(value.replace(/[^0-9.]/g, ''));
-    }
+	sleep(ms) {
+		return new Promise(resolve => setTimeout(resolve, ms));
+	}
 
-    async runBot() {
-        await this.launchBrowser();
-        await this.collectData();
-        // await this.authenticateGoogleSheets();
-        // await this.uploadToGoogleSheets();
-    }
+	async randomDelay(minSeconds = 2, maxSeconds = 5) {
+		const delay = Math.random() * (maxSeconds - minSeconds) + minSeconds;
+		return new Promise(resolve => setTimeout(resolve, delay * 1000));
+	}
 
-    async launchBrowser() {
-        this.browser = await puppeteer.launch({
-            headless: false,
-            args: [
-                '--no-sandbox',
-                '--disable-setuid-sandbox',
-                '--disable-notifications',
-                '--disable-extensions',
-                '--disable-blink-features=AutomationControlled',
-                '--disable-dev-shm-usage'
-            ]
-        });
-        this.page = await this.browser.newPage();
-        console.log(`opening ${this.url}`);
-        await this.page.goto(this.url, { waitUntil: 'networkidle2' });
-    }
+	async closeChrome() {
+		return new Promise((resolve, reject) => {
+			exec('taskkill /F /IM chrome.exe', (error, stdout, stderr) => {
+				if (error) {
+					console.log('Error closing Chrome:', error);
+					resolve();
+				} else {
+					console.log('Chrome has been closed.');
+					resolve();
+				}
+			});
+		});
+	}
 
-    async clickTableTab() {
-        await page.evaluate(() => {
-            const tab = document.querySelector('.TabBarItem__label[data-text="Table"]');
-            
-            // Check if the element exists and click it
-            if (tab) {
-                tab.click();
-                console.log('Clicked on the tab with data-text="Table"');
-            } else {
-                console.error('No tab with data-text="Table" found.');
-            }
-        });
-    }
-    
-    async collectData() {
-        try {
-            await this.page.waitForSelector('[class="homes summary"]', { timeout: 10000 });
-            const totalHomes = await this.page.$eval('[class="homes summary"]', el => el.textContent);
-            console.log(`Total homes listed in the area: ${totalHomes}`);
-    
-            await clickTableTab();
-    
-            console.log('sleep 120 secs');
-            await this.sleep(120000);
-    
-            await this.page.waitForSelector(this.property_url_element_selector, { timeout: 10000 });
-            const property_urls = await this.page.$$eval(this.property_url_element_selector, links => links.map(link => link.href));
-            console.log(`Found ${property_urls.length} property URLs`);
-    
-            for (const property_url of property_urls) {
-                try {
-                    console.log(`Opening ${property_url}`);
-                    await this.page.goto(property_url, { waitUntil: 'networkidle0', timeout: 30000 });
-    
-                    console.log('Getting price');
-                    await this.page.waitForSelector(this.price_selector, { timeout: 10000 });
-                    const price = await this.page.$eval(this.price_selector, el => {
-                        const statsValueElement = el.querySelector('div.statsValue');
-                        return statsValueElement ? statsValueElement.textContent.trim() : null;
+	parseNumber(value) {
+		return parseFloat(value.replace(/[^0-9.]/g, ''));
+	}
+
+	async launchBrowser() {
+		this.browser = await puppeteer.launch({
+			headless: false,
+			args: [
+				'--no-sandbox',
+				'--disable-setuid-sandbox',
+				'--disable-notifications',
+				'--disable-extensions',
+				'--disable-blink-features=AutomationControlled',
+				'--disable-dev-shm-usage'
+			]
+		});
+		this.page = await this.browser.newPage();
+		console.log(`opening ${this.selectors['url']}`);
+		// await this.page.goto(this.selectors['url']);
+        await this.page.goto(this.selectors['url'], { waitUntil: 'networkidle0', timeout: 60000 });        
+        console.log('page loaded.');
+	}
+
+	async clickTableTab() {
+		await this.page.evaluate(() => {
+			const tab = document.querySelector(this.selectors['tab_selector']);
+			if (tab) {
+				tab.click();
+				console.log('Clicked on the tab with data-text="Table"');
+			} else {
+				console.error('No tab with data-text="Table" found.');
+			}
+		});
+	}
+
+	async collectPropertyUrls() {
+		console.log('getting property urls...');
+		await this.page.waitForSelector(this.selectors['propertyUrlElement'], { timeout: 10000 });
+		this.propertyUrls = await this.page.$$eval(this.selectors['propertyUrlElement'], links => links.map(link => link.href));
+		console.log(`Found ${this.propertyUrls.length} property URLs`);
+		console.log(this.propertyUrls);
+		await this.savePropertyUrls();
+		// await this.saveToJson(this.propertyUrls);
+		// fs.writeFileSync("data.json", JSON.stringify(this.propertyUrls));
+		await this.page.waitForSelector(this.selectors['homesSummary'], { timeout: 10000 });
+		const totalHomes = await this.page.$eval(this.selectors['homesSummary'], el => el.textContent);
+		console.log(`Total homes listed in the area: ${totalHomes}`);
+		console.log('sleep 2 secs');
+		await this.sleep(2000);
+	}
+
+	// async savePropertyUrls() {
+		// try {
+			// console.log('Property URLs saved to file successfully.');
+		// } catch (error) {
+			// console.error('Error saving property URLs to file:', error);
+		// }
+	// }
+
+	// async readPropertyUrls() {
+	// 	try {
+	// 		const fileContent = await fs.readFile(this.propertyUrlsFilePath, 'utf8');
+	// 		this.propertyUrls = JSON.parse(fileContent);
+	// 		console.log('Property URLs read from file successfully.');
+	// 	} catch (error) {
+	// 		console.error('Error reading property URLs from file:', error);
+	// 		this.propertyUrls = [];
+	// 	}
+	// }
+
+    async readPropertyUrls() {
+	fs.readFile(this.propertyUrlsFilePath, "utf8", (error, data) => {
+		if (error) {
+			console.log(error);
+			return;
+		}
+		this.propertyUrls = JSON.parse(data);
+		console.log(this.propertyUrls);
+		});
+	}
+
+	async collectData() {
+		try {
+			for (const propertyUrl of this.propertyUrls.slice(0,1)) {
+				try {
+					console.log(`Opening ${propertyUrl}`);
+                    await this.page.goto(propertyUrl, { waitUntil: 'networkidle0', timeout: 60000 });
+					console.log('Getting price');
+					await this.page.waitForSelector(this.selectors['price'], { timeout: 10000 });
+					// const price = await.this.page.$eval(this.selectors['price']);
+					// const priceElement = await this.page.$eval(this.selectors['price']);
+					// const price = await priceElement.$eval('[class="div statsValue"]', el => el.textContent.trim());
+                    const price = await this.page.$eval(this.selectors['price'], el => {
+                        const priceElement = el.querySelector('.statsValue');
+                        return priceElement ? priceElement.textContent.trim() : null;
                     });
-    
-                    let square_footage;
-                    try {
-                        await this.page.waitForSelector('[class="stat-block sqft-section"]', { timeout: 5000 });
-                        square_footage = await this.page.$eval('[class="stat-block sqft-section"]', el => el.textContent.trim());
-                    } catch (error) {
-                        square_footage = "Couldn't find element";
-                        console.log(`Error getting square footage: ${error.message}`);
-                    }
-    
-                    console.log(`Price: ${price}`);
-                    console.log(`Square Footage: ${square_footage}`);
-    
-                    this.data.push({ price, square_footage, property_url });
-                    await this.updateData();
-    
-                    await this.randomDelay();
-                } catch (error) {
-                    console.error(`Error processing ${property_url}: ${error.message}`);
-                }
-            }
-        } catch (error) {
-            console.error(`An error occurred in collectData: ${error.message}`);
-        } finally {
-            await this.browser.close();
-        }
-    }
-    
+					// const price = await this.page.$eval(this.selectors['price'], el => {
+						// const statsValueElement = el.querySelector('[class="div statsValue"]');
+						// return statsValueElement ? statsValueElement.textContent.trim() : null;
+					// });
+					let squareFootage;
+					try {
+						await this.page.waitForSelector(this.selectors['squareFeet'], { timeout: 5000 });
+						squareFootage = await this.page.$eval(this.selectors['squareFeet'], el => el.textContent.trim());
+					} catch (error) {
+						squareFootage = "Couldn't find element";
+						console.log(`Error getting square footage: ${error.message}`);
+					}
 
-    async collectData() {
-        try {
-            await this.page.waitForSelector('[class="homes summary"]', { timeout: 10000 });
-            const totalHomes = await this.page.$eval('[class="homes summary"]', el => el.textContent);
-            console.log(`Total homes listed in the area: ${totalHomes}`);
-            // Find and click the tab with text including "Table"
-            await this.page.waitForSelector(this.tab_selector, { timeout: 10000 });
-            const tabs = await this.page.$$(this.tab_selector);
-            let tableTabFound = false;
-            for (let tab of tabs) {
-                const tabText = await this.page.evaluate(el => el.textContent, tab);
-                if (tabText.includes('Table')) {
-                    console.log(`Found tab with "Table": ${tabText}`);
-                    await tab.click();
-                    tableTabFound = true;
-                    break;
-                }
-            }
-            if (!tableTabFound) {
-                console.error('No tab with "Table" found.');
-                return;
-            }
-    
-            console.log('sleep 120 secs')
-            await this.sleep(120000);
-    
-            await this.page.waitForSelector(this.property_url_element_selector, { timeout: 10000 });
-            const property_urls = await this.page.$$eval(this.property_url_element_selector, links => links.map(link => link.href));
-            console.log(`Found ${property_urls.length} property URLs`);
-    
-            for (const property_url of property_urls) {
-                try {
-                    console.log(`Opening ${property_url}`);
-                    await this.page.goto(property_url, { waitUntil: 'networkidle0', timeout: 30000 });
-                    
-                    console.log('Getting price');
-                    await this.page.waitForSelector(this.price_selector, { timeout: 10000 });
-                    const price = await this.page.$eval(this.price_selector, el => {
-                        const statsValueElement = el.querySelector('div.statsValue');
-                        return statsValueElement ? statsValueElement.textContent.trim() : null;
-                    });
-                    let square_footage;
-                    try {
-                        await this.page.waitForSelector('[class="stat-block sqft-section"]', { timeout: 5000 });
-                        square_footage = await this.page.$eval('[class="stat-block sqft-section"]', el => el.textContent.trim());
-                    } catch (error) {
-                        square_footage = "Couldn't find element";
-                        console.log(`Error getting square footage: ${error.message}`);
-                    }
-    
-                    console.log(`Price: ${price}`);
-                    console.log(`Square Footage: ${square_footage}`);
-    
-                    this.data.push({ price, square_footage, property_url });
-                    await this.updateData();
-    
-                    await this.randomDelay();
-                } catch (error) {
-                    console.error(`Error processing ${property_url}: ${error.message}`);
-                }
-            }
-        } catch (error) {
-            console.error(`An error occurred in collectData: ${error.message}`);
-        } finally {
-            await this.browser.close();
-        }
-    }
+					console.log(`Price: ${price}`);
+					console.log(`Square Footage: ${squareFootage}`);
 
-    }
+					this.data.push({ price, squareFootage, propertyUrl });
+					await this.updateData();
+
+					await this.randomDelay();
+				} catch (error) {
+					console.error(`Error processing ${propertyUrl}: ${error.message}`);
+				}
+			}
+		} catch (error) {
+			console.error(`An error occurred in collectData: ${error.message}`);
+		} finally {
+			await this.browser.close();
+		}
+	}
+}
+
 (async () => {
-    const bot = new HouseBot();
-    await bot.runBot();
+	const bot = new HouseBot();
+    // await bot.launchBrowser();
+    // await bot.collectPropertyUrls();
+	await bot.readPropertyUrls();
+    // await bot.collectData();
+    // await this.authenticateGoogleSheets();
+    // await this.uploadToGoogleSheets();
 })();

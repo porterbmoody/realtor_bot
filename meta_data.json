@@ -1,0 +1,12 @@
+{
+	"url": "https://www.redfin.com/city/6208/FL/Fort-Myers",
+	"keyField": "property_url",
+	"sheetUrl": "https://docs.google.com/spreadsheets/d/1Iz6G0vnUSogAjWMwnSJ1aJbNRr3VoqU3c-BaC1xSWVo/edit?fbclid=IwZXh0bgNhZW0CMTEAAR1Wu_u_d5yRlZbBKxJ2ndxb7AHpsEOxjqH0k7vRCs3F6vo1f5ZhLpAb0rs_aem_-jf0aobbjchuCTbOYFsOug&pli=1&gid=0#gid=0",
+	"propertyCard": "[class='bp-Homecard bp-InteractiveHomecard MapHomecardWrapper MapHomecardWrapper--selected MapHomecardWrapper--photosLoading bp-InteractiveHomecard--hideNumIndicator clickable']",
+	"propertyUrlElement": "[class='link-and-anchor visuallyHidden']",
+	"price": "[data-rf-test-id='abp-price']",
+	"tab": "[class='TabBarItem__label']",
+	"row": "[class='tableRow']",
+    "homesSummary": "[class='homes summary']",
+    "squareFeet": "[class='stat-block sqft-section']"
+}
